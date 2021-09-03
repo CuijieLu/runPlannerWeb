@@ -54,6 +54,39 @@ function listBarcodeCollision(seqList1, seqList2, numOfMismatch){
     return false;
 }
 
+//function to calculates total reads from a list of samples
+function getTotalReads(listOfSamples) {
+    var totalReadsNum = 0;
+    for(let i = 0; i < listOfSamples.length; i++){
+        totalReadsNum = totalReadsNum + listOfSamples[i].readsRequest;
+    }
+    return totalReadsNum;
+}
+
+//function for checking barcode of pools that contain pool normal(not tested yet)
+function checkPoolNormal(pool1, pool2, numOfMismatch){
+    var minLength = 18;
+    for (let i = 0; i < pool1.barcodeSeq.length; i++){
+        if(pool1.barcodeSeq[i].length < minLength){
+            minLength = pool1.barcodeSeq[i].length ;
+        }
+    }
+    for (let i = 0; i < pool2.barcodeSeq.length; i++){
+        if(pool2.barcodeSeq[i].length < minLength){
+            minLength = pool2.barcodeSeq[i].length ;
+        }
+    }
+    for (let i = 0; i < pool1.barcodeSeq.length; i++){
+        for (let j = 0; j < pool2.barcodeSeq.length; j++){
+            if (barcodeCollision(pool1.barcodeSeq[i], pool2.barcodeSeq[j],minLength,numOfMismatch) && !(i == 0 && j == 0)){
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
 // function for seperating samples into different lanes based on reads number, barcode and recipe
 function assignLane(sampleList, laneNumber){
     var freeList = sampleList.concat();
@@ -63,6 +96,7 @@ function assignLane(sampleList, laneNumber){
         for(let j = 0; j < sampleList.length; j++){
             if((i != j) && (listBarcodeCollision(sampleList[i].barcodeSeq, sampleList[j].barcodeSeq,0))){
                 // if collision happens, push it out from freelist
+//need to add a function to check poolednormal barcodes
                 for(let m = 0; m < freeList.length; m++){ 
                     if (freeList[m] === sampleList[i]) { 
                         freeList.splice(m, 1); 
@@ -70,13 +104,22 @@ function assignLane(sampleList, laneNumber){
                 }
                 //then push the sample with collision barcode into groupList
                 if (groupList.length != 0){
-                    for (let i = 0; i < groupList.length; i++){
+                    for (let x = 0; x < groupList.length; x++){
                         var add = true;
-                        for(let j = 0; j < groupList[i].length; j++){
-
+                        for(let y = 0; y < groupList[x].length; y++){
+                            if(listBarcodeCollision(sampleList[i].barcodeSeq, groupList[x][y].barcodeSeq,0)){
+                                add = false;
+                                break;
+                            }
+                        }
+                        if(add == true){
+                            groupList[x].push(sampleList[i]);
+                            break;
                         }
                     }
-                    console.log(sampleList[i]);
+                    if(add == false){
+                        groupList.push([sampleList[i]]);
+                    }
                 }else{
                     groupList.push([sampleList[i]]);
                 }
@@ -85,7 +128,15 @@ function assignLane(sampleList, laneNumber){
             }
         }
     }
-    return freeList;
+    // check whether the requested lane number can be achived
+    if(laneNumber < groupList.length){
+        return("need more lanes!")
+    }
+
+
+    console.log(freeList);
+    console.log('break');
+    return groupList;
 }
 
 // function for deciding optimized run by given sample list(grouped samples)
