@@ -1,3 +1,37 @@
+import {sample, pooledSample} from './component.mjs';
+
+
+//function to create sample object from testcase file(LIMS request)
+function createSampleObject(sampleMap) {
+    var sampleObject = new sample(sampleMap['pool'], sampleMap['sampleId'],sampleMap['recipe'],sampleMap['requestId'],sampleMap['requestName'],
+    sampleMap['altConcentration'],sampleMap['concentrationUnits'],sampleMap['volume'],sampleMap['barcodeSeq'],sampleMap['runType'],
+    sampleMap['readNum'],sampleMap['remainingReads']);
+    return sampleObject;
+}
+//function to create sampleList by merging pooledsamples from sample object list
+function createSampleList(sampleObjectList){
+    var sampleList = [];
+    const samplePoolList = new Map();
+    for (let i = 0; i < sampleObjectList.length; i++){
+        if(sampleObjectList[i].poolID === undefined){
+            sampleList.push(sampleObjectList[i]);
+        }else{
+            if(samplePoolList.has(sampleObjectList[i].poolID)){
+                var temp = samplePoolList.get(sampleObjectList[i].poolID)
+                temp.push(sampleObjectList[i]);
+                samplePoolList.set(sampleObjectList[i].poolID,temp)
+            }else{
+                samplePoolList.set(sampleObjectList[i].poolID, [sampleObjectList[i]]);
+            }
+        }
+    }
+    for (const value of samplePoolList.values()){
+        var pooledSampleObject = new pooledSample(value);
+        sampleList.push(pooledSampleObject);
+    }   
+    return(sampleList);
+}
+
 // function for barcode checking between two samples
 function barcodeCollision(seq1, seq2, length, numOfMismatch){
     var seq1_frag = seq1.substr(0,length);
@@ -37,7 +71,7 @@ function listBarcodeCollision(seqList1, seqList2, numOfMismatch){
     emptyList.push(seqList1, seqList2);
     var newSeqList = emptyList.flat();
     //get minimum barcode length
-    var minLength = 18;
+    var minLength = 30;
     for (let i = 0; i < newSeqList.length; i++){
         if(newSeqList[i].length < minLength){
             minLength = newSeqList[i].length;
@@ -64,8 +98,9 @@ function getTotalReads(listOfSamples) {
 }
 
 //function for checking barcode of pools that contain pool normal(not tested yet)
+//return false if collison caused by pool normal
 function checkPoolNormal(pool1, pool2, numOfMismatch){
-    var minLength = 18;
+    var minLength = 30;
     for (let i = 0; i < pool1.barcodeSeq.length; i++){
         if(pool1.barcodeSeq[i].length < minLength){
             minLength = pool1.barcodeSeq[i].length ;
@@ -85,59 +120,98 @@ function checkPoolNormal(pool1, pool2, numOfMismatch){
     }
     return false;
 }
+//function for checking whether barcode collison happens between two samples
+function sampleBarcodeCollision(sample1, sample2, numOfMismatch){
+    if (sample1.poolID !== undefined && sample2.poolID !== undefined 
+    && sample1.containNormal == true && sample2.containNormal == true){
+            return checkPoolNormal(sample1, sample2, numOfMismatch);
+    }else{
+        return listBarcodeCollision(sample1.barcodeSeq, sample2.barcodeSeq, numOfMismatch);
+    }
+}
 
 
-// function for seperating samples into different lanes based on reads number, barcode and recipe
-function assignLane(sampleList, laneNumber){
+// function for seperating samples into different groups based on barcode
+function getCollisionGroup(sampleList){
     var freeList = sampleList.concat();
     var groupList = [];
-    // seperate the samples into freeList and groupList based on barcode
+    var collisionList = [];
+     //function to sort collisionList by collision times
+    function makeSortedCollisionList(collisionList1){
+        var collisionMap = new Map();
+        for(let i = 0; i < collisionList1.length; i++){
+            let count = 0;
+            for(let j = 0; j < collisionList1.length; j++){ 
+                if((i != j) && (sampleBarcodeCollision(collisionList1[i], collisionList1[j],0))){
+                    count = count + 1;
+                }
+            }
+            collisionMap.set(collisionList1[i], count);
+        }    
+        const collisionMapSorted = new Map([...collisionMap.entries()].sort((a, b) => b[1] - a[1]));
+        var collisionListSorted1 = [];
+        for (const key of collisionMapSorted.keys()){
+            collisionListSorted1.push(key);
+        } 
+        return collisionListSorted1;
+    }
+    // seperate the samples into freeList and collisionList based on barcode
     for(let i = 0; i < sampleList.length; i++){
         for(let j = 0; j < sampleList.length; j++){
-            if((i != j) && (listBarcodeCollision(sampleList[i].barcodeSeq, sampleList[j].barcodeSeq,0))){
-                // if collision happens, push it out from freelist
-//need to add a function to check poolednormal barcodes
-                for(let m = 0; m < freeList.length; m++){ 
-                    if (freeList[m] === sampleList[i]) { 
-                        freeList.splice(m, 1); 
-                    }
-                }
-                //then push the sample with collision barcode into groupList
-                if (groupList.length != 0){
-                    for (let x = 0; x < groupList.length; x++){
-                        var add = true;
-                        for(let y = 0; y < groupList[x].length; y++){
-                            if(listBarcodeCollision(sampleList[i].barcodeSeq, groupList[x][y].barcodeSeq,0)){
-                                add = false;
-                                break;
-                            }
-                        }
-                        if(add == true){
-                            groupList[x].push(sampleList[i]);
-                            break;
+            let collision = false;
+            if((i != j) && (sampleBarcodeCollision(sampleList[i], sampleList[j],0))){
+                    //remove the sample with collision barcode from freeList
+                    for(let m = 0; m < freeList.length; m++){ 
+                        if (freeList[m] === sampleList[i]) { 
+                            freeList.splice(m, 1); 
                         }
                     }
-                    if(add == false){
-                        groupList.push([sampleList[i]]);
-                    }
-                }else{
-                    groupList.push([sampleList[i]]);
-                }
-                
-                break;
+                    //then push the sample with collision barcode into collisionList
+                    collisionList.push(sampleList[i]);
+                    break;
             }
         }
     }
-    // check whether the requested lane number can be achived
-    if(laneNumber < groupList.length){
-        return("need more lanes!")
+
+    //create groupList based on sortedcollisonlist(based on collision times)
+    var collisionListSorted = makeSortedCollisionList(collisionList);
+    for (let i = 0; i < collisionListSorted.length; i++){
+        if (groupList.length != 0){
+            for (let x = 0; x < groupList.length; x++){
+                var add = true;
+                for(let y = 0; y < groupList[x].length; y++){
+                    if(sampleBarcodeCollision(collisionListSorted[i], groupList[x][y],0)){
+                        add = false;
+                        break;
+                    }
+                }
+                if(add == true){
+                    groupList[x].push(collisionListSorted[i]);
+                    break;
+                }
+            }
+            if(add == false){
+                groupList.push([collisionListSorted[i]]);
+            }
+        }else{
+            groupList.push([collisionListSorted[i]]);
+        }
+
     }
 
-
-    console.log(freeList);
-    console.log('break');
     return groupList;
 }
+
+
+    // assigned the samples to the lanes according to project, recipe, and reads number
+    // var totalReads = getTotalReads(sampleList);
+    // var laneCapacity = totalReads/laneNumber;
+    // create recipe desired group, 
+    // sorted the free list by projects and recipe and seperate into groups
+    // search the existing samples in the lane and fill in by project or recipe
+
+
+
 
 // function for deciding optimized run by given sample list(grouped samples)
 function optimizeRun(sampleList){
@@ -145,4 +219,6 @@ function optimizeRun(sampleList){
 }
 
 
-export {barcodeCollision, listBarcodeCollision, assignLane};
+export {createSampleObject, createSampleList, getCollisionGroup, sampleBarcodeCollision, getTotalReads};
+
+

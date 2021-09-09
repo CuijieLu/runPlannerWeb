@@ -2,7 +2,7 @@
 
 class sample{
     constructor(poolID, sampleID, recipe, requestID, RequestName, sampleConc, units, volume, barcodeSeq, runLength, readsRequest, readsRemaining){
-        this.poolID = poolID; // what it looks like if empty
+        this.poolID = poolID; // if doesn't exist, show as undefined
         this.sampleID = sampleID;
         this.recipe = recipe;
         this.requestID = requestID;
@@ -16,7 +16,7 @@ class sample{
         this.volume = volume;
         this.barcodeSeq = barcodeSeq;
         this.runLength = runLength;
-        this.readsRequest = readsRequest;
+        this.readsRequest = Number(readsRequest);
         this.readsRemaining = readsRemaining;
     }
 
@@ -34,7 +34,7 @@ class pooledSample{
         }
         return totalReads;
     }
-    ifContianNormal(listOfSamples){
+    ifcontainNormal(listOfSamples){
         let contain = false;
         for(let i = 0; i < listOfSamples.length; i++){
             if (listOfSamples[i].sampleID.includes("NORMAL")){
@@ -57,7 +57,7 @@ class pooledSample{
     }
     constructor(listOfSamples){ 
         this.readsRequest = this.getTotalReads(listOfSamples);
-        this.contianNormal = this.ifContianNormal(listOfSamples);
+        this.containNormal = this.ifcontainNormal(listOfSamples);
         this.poolID = listOfSamples[0].poolID;
         this.recipe = listOfSamples[0].recipe;
         this.isUser = listOfSamples[0].isUser;
